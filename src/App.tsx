@@ -100,6 +100,7 @@ export default function App() {
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [messages, setMessages] = useState<{ text: string; isModel: boolean; id: string }[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [sensitivity, setSensitivity] = useState(1.5);
   
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
   const audioPlayerRef = useRef<AudioPlayer | null>(null);
@@ -184,6 +185,7 @@ export default function App() {
         if (!audioStreamerRef.current) {
           audioStreamerRef.current = new AudioStreamer(handleAudioData);
         }
+        audioStreamerRef.current.setGain(sensitivity);
         await audioStreamerRef.current.start();
       } catch (err: any) {
         handleError(err);
@@ -488,6 +490,33 @@ export default function App() {
                     )}
                   </motion.button>
                 ))}
+              </div>
+
+              <div className="mt-6 px-2">
+                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Sensitivity</h3>
+                <input 
+                  type="range" 
+                  min="0.5" 
+                  max="4" 
+                  step="0.1" 
+                  value={sensitivity} 
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setSensitivity(val);
+                    audioStreamerRef.current?.setGain(val);
+                  }}
+                  className={cn(
+                    "w-full h-1.5 rounded-lg appearance-none cursor-pointer bg-zinc-800",
+                    currentTheme.id === "cyberpunk" ? "accent-pink-500" :
+                    currentTheme.id === "midnight" ? "accent-blue-500" :
+                    currentTheme.id === "rose" ? "accent-rose-500" :
+                    "accent-teal-500"
+                  )}
+                />
+                <div className="flex justify-between mt-1">
+                  <span className="text-[10px] text-zinc-600 uppercase font-bold tracking-tighter">Low</span>
+                  <span className="text-[10px] text-zinc-600 uppercase font-bold tracking-tighter">High</span>
+                </div>
               </div>
             </motion.div>
           )}
