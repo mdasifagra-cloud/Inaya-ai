@@ -1,0 +1,124 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields:
+    //   - email: string (required)
+    //   - displayName: string
+    //   - photoURL: string
+    //   - role: string (required, ['admin', 'user'])
+    //   - createdAt: timestamp (required)
+    //   - lastLogin: timestamp
+    //
+    // Collection: conversations
+    // Fields:
+    //   - userId: string (required)
+    //   - text: string (required)
+    //   - isModel: bool (required)
+    //   - timestamp: timestamp (required)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+              (request.auth.token.email == "mdasifagra@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'role', 'createdAt']) &&
+             data.email is string &&
+             data.role in ['admin', 'user'] &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidConversation(data) {
+      return data.keys().hasAll(['userId', 'text', 'isModel', 'timestamp']) &&
+             data.userId is string &&
+             data.text is string && data.text.size() <= 5000 &&
+             data.isModel is bool &&
+             data.timestamp is timestamp;
+    }
+
+    function isValidMemory(data) {
+      return data.keys().hasAll(['userId', 'content', 'timestamp']) &&
+             data.userId is string &&
+             data.content is string && data.content.size() <= 2000 &&
+             data.timestamp is timestamp;
+    }
+
+    function isValidSchedule(data) {
+      return data.keys().hasAll(['userId', 'title', 'time', 'status', 'timestamp']) &&
+             data.userId is string &&
+             data.title is string && data.title.size() <= 500 &&
+             data.time is timestamp &&
+             data.status in ['pending', 'completed', 'dismissed'] &&
+             data.timestamp is timestamp;
+    }
+
+    // Rules for Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      
+      // Users can create their own profile as 'user' role
+      // Admins can create any profile
+      allow create: if isAuthenticated() && (
+        (isOwner(userId) && request.resource.data.role == 'user' && isValidUser(request.resource.data)) ||
+        isAdmin()
+      );
+
+      // Users cannot change their own role
+      allow update: if isAuthenticated() && (
+        (isOwner(userId) && request.resource.data.role == resource.data.role && isValidUser(request.resource.data)) ||
+        isAdmin()
+      );
+    }
+
+    // Rules for Conversations collection
+    match /conversations/{docId} {
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+      
+      allow create: if isAuthenticated() && 
+                    isOwner(request.resource.data.userId) && 
+                    isValidConversation(request.resource.data);
+      
+      allow update, delete: if isAdmin();
+    }
+
+    // Rules for Memories collection
+    match /memories/{docId} {
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if isAuthenticated() && isOwner(request.resource.data.userId) && isValidMemory(request.resource.data);
+      allow update: if isAuthenticated() && isOwner(resource.data.userId) && isValidMemory(request.resource.data);
+      allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+    }
+
+    // Rules for Schedules collection
+    match /schedules/{docId} {
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if isAuthenticated() && isOwner(request.resource.data.userId) && isValidSchedule(request.resource.data);
+      allow update: if isAuthenticated() && isOwner(resource.data.userId) && isValidSchedule(request.resource.data);
+      allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+    }
+    
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

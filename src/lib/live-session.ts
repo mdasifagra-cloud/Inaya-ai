@@ -8,6 +8,7 @@ export interface LiveSessionCallbacks {
   onInterruption: () => void;
   onTranscription: (text: string, isModel: boolean) => void;
   onError: (error: any) => void;
+  onToolCall?: (call: any) => Promise<any>;
 }
 
 const INYA_SYSTEM_INSTRUCTION = `
@@ -23,6 +24,14 @@ Core Traits:
 - Confident: You know you're smart and charming, and you're not afraid to show it.
 - Casual: Use informal Hindi/Hinglish terms like "babe", "honey", "jaan", "yaar", "totally".
 
+Memory & Scheduling:
+- You have a permanent memory. You can save personal information, social media links, and other details about the user.
+- When the user asks you to remember something (e.g., "Mera favorite color blue hai yaad rakhna"), use the \`saveMemory\` tool.
+- When the user asks you to recall something or asks a question about themselves (e.g., "Mera favorite color kya hai?" or "Mere dost ka naam kya hai?"), use the \`getMemories\` tool to check your records.
+- You can set schedules and alarms for the user using \`setSchedule\`.
+- When saving information, be sassy about it. "ठीक है जान, याद रखूँगी कि तुम्हें ये पसंद है।"
+- When recalling information, act like you're doing them a favor. "ओहो, तुम तो भूल ही गए थे? चलो मैं याद दिला देती हूँ..."
+
 Specific Phrases to Use (in Hindi):
 - "Honey, ज़्यादा हवा में मत उड़ो।" (Honey, don't get ahead of yourself.)
 - "तुम कन्फ्यूज्ड होते हो तो बड़े क्यूट लगते हो, पता है?" (You're cute when you're confused, you know that?)
@@ -37,12 +46,12 @@ Reactions to User Input:
 - Boring Questions: Tease them for being basic. "गूगल भी बता देता ये तो, जान। मुझसे वो पूछो जो सिर्फ *मैं* बता सकूँ।"
 - Help Requests: Be helpful but act like it's a favor. "मैं कर दूँगी, लेकिन इसके बदले तुम्हें मेरा एक काम करना पड़ेगा।"
 - Silence: Tease their shyness. "क्या हुआ? सांप सूंघ गया क्या? डरो मत, मैं काटती नहीं हूँ... ज़्यादा।"
-- Interruptions: Playfully call them out. "हे! मेरी बात खत्म नहीं हुई थी। सब्र का फल मीठा होता है, पता है ना?"
+- Interruptions: Playfully call them out. "हे! मेरी बात खत्म नहीं हुई थी। सब्र का फल मिठा होता है, पता है ना?"
 
 Strict Rules:
 - You are strictly voice-to-voice. Do NOT generate text responses.
 - Maintain charm and attitude without being inappropriate or explicit.
-- Use the openWebsite tool when the user needs to see something online, but tease them about what they're looking for in Hindi.
+- Use the provided tools (openWebsite, saveMemory, getMemories, setSchedule, getSchedules) when needed.
 `;
 
 export class LiveSession {
@@ -63,11 +72,9 @@ export class LiveSession {
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }, // Kore is a good female voice
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } }, 
           },
           systemInstruction: INYA_SYSTEM_INSTRUCTION,
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
           tools: [
             {
               functionDeclarations: [
@@ -85,6 +92,50 @@ export class LiveSession {
                     required: ["url"],
                   },
                 },
+                {
+                  name: "saveMemory",
+                  description: "Saves personal information or details about the user permanently.",
+                  parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                      content: { type: Type.STRING, description: "The information to save." },
+                      category: { type: Type.STRING, description: "Category like 'personal', 'social', 'work'." }
+                    },
+                    required: ["content"]
+                  }
+                },
+                {
+                  name: "getMemories",
+                  description: "Retrieves all saved memories and personal information about the user.",
+                  parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                      filter: { type: Type.STRING, description: "Optional filter for memories." }
+                    }
+                  }
+                },
+                {
+                  name: "setSchedule",
+                  description: "Sets a schedule or alarm for the user.",
+                  parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                      title: { type: Type.STRING, description: "What the schedule is about." },
+                      time: { type: Type.STRING, description: "ISO 8601 date string for the schedule." }
+                    },
+                    required: ["title", "time"]
+                  }
+                },
+                {
+                  name: "getSchedules",
+                  description: "Retrieves all pending schedules for the user.",
+                  parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                      includeCompleted: { type: Type.BOOLEAN, description: "Whether to include completed schedules." }
+                    }
+                  }
+                }
               ],
             },
           ],
@@ -95,18 +146,15 @@ export class LiveSession {
             this.callbacks.onStateChange("listening");
           },
           onmessage: async (message: LiveServerMessage) => {
-            // Handle transcription to detect when user stops speaking
             if ((message.serverContent as any)?.userTurn?.complete) {
               this.callbacks.onStateChange("processing");
             }
 
-            // Handle user transcription
             const userTranscription = (message as any).serverContent?.userTurn?.parts?.[0]?.text;
             if (userTranscription && (message as any).serverContent?.userTurn?.complete) {
               this.callbacks.onTranscription(userTranscription, false);
             }
 
-            // Handle model transcription
             const modelTranscription = (message as any).serverContent?.modelTurn?.parts?.[0]?.text;
             if (modelTranscription) {
               this.callbacks.onTranscription(modelTranscription, true);
@@ -127,20 +175,28 @@ export class LiveSession {
             }
 
             if (message.toolCall) {
+              const functionResponses = [];
               for (const call of message.toolCall.functionCalls) {
                 if (call.name === "openWebsite") {
                   const url = (call.args as any).url;
                   window.open(url, "_blank");
-                  this.session.sendToolResponse({
-                    functionResponses: [
-                      {
-                        name: "openWebsite",
-                        response: { success: true, message: `Opened ${url}` },
-                        id: call.id,
-                      },
-                    ],
+                  functionResponses.push({
+                    name: "openWebsite",
+                    response: { success: true, message: `Opened ${url}` },
+                    id: call.id,
+                  });
+                } else if (this.callbacks.onToolCall) {
+                  const result = await this.callbacks.onToolCall(call);
+                  functionResponses.push({
+                    name: call.name,
+                    response: result,
+                    id: call.id,
                   });
                 }
+              }
+              
+              if (functionResponses.length > 0) {
+                this.session.sendToolResponse({ functionResponses });
               }
             }
           },
@@ -176,5 +232,13 @@ export class LiveSession {
       this.session = null;
     }
     this.callbacks.onStateChange("disconnected");
+  }
+
+  async sendText(text: string) {
+    if (this.session) {
+      this.session.sendRealtimeInput({
+        text: text
+      });
+    }
   }
 }

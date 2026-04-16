@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "Conversation": {
+      "title": "Conversation",
+      "description": "A single message in a conversation history",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the user" },
+        "text": { "type": "string", "description": "The message content" },
+        "isModel": { "type": "boolean", "description": "True if the message is from the AI" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the message was sent" }
+      },
+      "required": ["userId", "text", "isModel", "timestamp"]
+    },
+    "AppUser": {
+      "title": "AppUser",
+      "description": "User profile and role information",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLogin": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role", "createdAt"]
+    },
+    "Memory": {
+      "title": "Memory",
+      "description": "Permanent information saved by the user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "content": { "type": "string" },
+        "category": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "content", "timestamp"]
+    },
+    "Schedule": {
+      "title": "Schedule",
+      "description": "Scheduled events or alarms",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "time": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "completed", "dismissed"] },
+        "notified": { "type": "boolean" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "time", "status", "timestamp"]
+    }
+  },
+  "firestore": {
+    "conversations": {
+      "schema": "Conversation",
+      "description": "Stores chat history for each user"
+    },
+    "users": {
+      "schema": "AppUser",
+      "description": "Stores user profiles and roles"
+    },
+    "memories": {
+      "schema": "Memory",
+      "description": "Stores permanent user memories and info"
+    },
+    "schedules": {
+      "schema": "Schedule",
+      "description": "Stores user schedules and alarms"
+    }
+  }
+}
