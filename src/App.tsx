@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Mic, MicOff, Power, PowerOff, Globe, AlertCircle, Loader2 } from "lucide-react";
+import { Mic, MicOff, Power, PowerOff, Globe, AlertCircle, Loader2, ExternalLink, X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { AudioStreamer } from "@/src/lib/audio-streamer";
 import { AudioPlayer } from "@/src/lib/audio-player";
@@ -101,6 +101,8 @@ export default function App() {
   const [messages, setMessages] = useState<{ text: string; isModel: boolean; id: string }[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [sensitivity, setSensitivity] = useState(1.5);
+  const [showUrlModal, setShowUrlModal] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
   
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
   const audioPlayerRef = useRef<AudioPlayer | null>(null);
@@ -201,6 +203,17 @@ export default function App() {
     };
   }, []);
 
+  const handleOpenWebsite = () => {
+    if (urlInput) {
+      let url = urlInput;
+      if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        url = "https://" + url;
+      }
+      window.open(url, "_blank");
+      setShowUrlModal(false);
+      setUrlInput("");
+    }
+  };
   const getStatusText = () => {
     switch (state) {
       case "disconnected": return "तुम्हें छेड़ने के लिए तैयार हूँ...";
@@ -448,6 +461,15 @@ export default function App() {
           </motion.div>
         </motion.button>
 
+        <motion.button
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setShowUrlModal(true)}
+          className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+        >
+          <ExternalLink className="w-5 h-5" />
+        </motion.button>
+
         <AnimatePresence>
           {showThemeSelector && (
             <motion.div
@@ -578,6 +600,59 @@ export default function App() {
               <div ref={historyEndRef} />
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* URL Input Modal */}
+      <AnimatePresence>
+        {showUrlModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-3xl p-8 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold tracking-tight">वेबसाइट खोलें</h3>
+                <button 
+                  onClick={() => setShowUrlModal(false)}
+                  className="text-zinc-500 hover:text-white transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                <p className="text-zinc-400 text-sm">
+                  वह URL दर्ज करें जिसे आप खोलना चाहते हैं। इन्या इसे आपके लिए एक नए टैब में खोल देगी।
+                </p>
+                <div className="relative">
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="google.com"
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleOpenWebsite()}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-pink-500/50 transition-all"
+                  />
+                </div>
+                <button
+                  onClick={handleOpenWebsite}
+                  disabled={!urlInput}
+                  className={cn(
+                    "w-full py-4 rounded-2xl font-bold text-sm uppercase tracking-widest transition-all",
+                    urlInput 
+                      ? cn("text-white shadow-lg", currentTheme.primary) 
+                      : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                  )}
+                >
+                  खोलें
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
