@@ -69,7 +69,7 @@ export class LiveSession {
 
   constructor(callbacks: LiveSessionCallbacks) {
     this.callbacks = callbacks;
-    this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+    this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY!, apiVersion: "v1alpha" });
   }
 
   async connect() {
