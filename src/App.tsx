@@ -145,10 +145,37 @@ export default function App() {
   const audioPlayerRef = useRef<AudioPlayer | null>(null);
   const liveSessionRef = useRef<LiveSession | null>(null);
   const historyEndRef = useRef<HTMLDivElement>(null);
+  const modelResponseBufferRef = useRef<string>("");
 
   const scrollToBottom = () => {
     historyEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  // Auto-reconnect logic for Live Session
+  useEffect(() => {
+    let timeoutId: any;
+    if (isPowerOn && state === "disconnected") {
+      // If power is on but session disconnected (e.g. timeout), try to reconnect
+      if (!liveSessionRef.current) {
+        liveSessionRef.current = new LiveSession({
+          onStateChange: setState,
+          onAudioOutput: handleAudioOutput,
+          onInterruption: handleInterruption,
+          onTranscription: handleTranscription,
+          onTurnComplete: handleTurnComplete,
+          onError: handleError,
+          onToolCall: handleToolCall
+        });
+      }
+      timeoutId = setTimeout(() => {
+        console.log("Attempting auto-reconnect...");
+        liveSessionRef.current?.connect().catch(err => {
+          console.error("Auto-reconnect failed:", err);
+        });
+      }, 2000);
+    }
+    return () => clearTimeout(timeoutId);
+  }, [isPowerOn, state]);
 
   useEffect(() => {
     if (showHistory) {
@@ -172,7 +199,12 @@ export default function App() {
     if (audioPlayerRef.current) {
       audioPlayerRef.current.clearQueue();
     }
-  }, []);
+    // If interrupted, save what the model said so far
+    if (modelResponseBufferRef.current) {
+      saveMessage(modelResponseBufferRef.current + " [Interrupted]", true);
+      modelResponseBufferRef.current = "";
+    }
+  }, [user]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -405,12 +437,16 @@ export default function App() {
 
   const handleTranscription = useCallback((text: string, isModel: boolean) => {
     if (isModel) {
-      // For model, we append locally first for responsiveness, 
-      // but the actual persistence should happen when the turn is complete 
-      // or in chunks. For simplicity here, we save each chunk.
-      saveMessage(text, true);
+      modelResponseBufferRef.current += text;
     } else {
       saveMessage(text, false);
+    }
+  }, [user]);
+
+  const handleTurnComplete = useCallback(() => {
+    if (modelResponseBufferRef.current) {
+      saveMessage(modelResponseBufferRef.current, true);
+      modelResponseBufferRef.current = "";
     }
   }, [user]);
 
@@ -444,6 +480,7 @@ export default function App() {
             onAudioOutput: handleAudioOutput,
             onInterruption: handleInterruption,
             onTranscription: handleTranscription,
+            onTurnComplete: handleTurnComplete,
             onError: handleError,
             onToolCall: handleToolCall
           });
@@ -979,7 +1016,7 @@ export default function App() {
             )}
           >
             <motion.div animate={{ rotate: showHistory ? 180 : 0 }}>
-              <AlertCircle className="w-5 h-5" />
+              <MessageSquare className="w-5 h-5" />
             </motion.div>
           </motion.button>
 
@@ -1079,12 +1116,6 @@ export default function App() {
               <div className="p-4 border-b border-zinc-800/50 flex flex-col gap-3 bg-zinc-900/60">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">बातचीत</h3>
-                  <button 
-                    onClick={() => setMessages([])}
-                    className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors uppercase font-bold"
-                  >
-                    साफ करें
-                  </button>
                 </div>
                 
                 <div className="flex flex-col gap-2">

@@ -7,6 +7,7 @@ export interface LiveSessionCallbacks {
   onAudioOutput: (base64Data: string) => void;
   onInterruption: () => void;
   onTranscription: (text: string, isModel: boolean) => void;
+  onTurnComplete?: () => void;
   onError: (error: any) => void;
   onToolCall?: (call: any) => Promise<any>;
 }
@@ -181,6 +182,7 @@ export class LiveSession {
 
             if (message.serverContent?.turnComplete) {
               this.callbacks.onStateChange("listening");
+              this.callbacks.onTurnComplete?.();
             }
 
             if (message.toolCall) {
