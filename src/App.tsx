@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Mic, MicOff, Power, PowerOff, Globe, AlertCircle, Loader2, ExternalLink, X, LogOut, User as UserIcon, LayoutDashboard, MessageSquare, Settings, Users, BarChart3, ShieldCheck, Clock, Calendar } from "lucide-react";
+import { Mic, MicOff, Power, PowerOff, Globe, AlertCircle, Loader2, ExternalLink, X, LogOut, User as UserIcon, LayoutDashboard, MessageSquare, Settings, Users, BarChart3, ShieldCheck, Clock, Calendar, Search, Filter, Smile, Send, Paperclip, FileText, Image as ImageIcon } from "lucide-react";
+import { GoogleGenAI, Type } from "@google/genai";
 import { cn } from "@/src/lib/utils";
 import { AudioStreamer } from "@/src/lib/audio-streamer";
 import { AudioPlayer } from "@/src/lib/audio-player";
@@ -120,8 +121,10 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [currentTheme, setCurrentTheme] = useState<Theme>(THEMES[0]);
   const [showThemeSelector, setShowThemeSelector] = useState(false);
-  const [messages, setMessages] = useState<{ text: string; isModel: boolean; id: string }[]>([]);
+  const [messages, setMessages] = useState<{ text: string; isModel: boolean; id: string; reactions?: { emoji: string; count: number; users: string[] }[] }[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterType, setFilterType] = useState<"all" | "user" | "model">("all");
   const [sensitivity, setSensitivity] = useState(1.5);
   const [showUrlModal, setShowUrlModal] = useState(false);
   const [urlInput, setUrlInput] = useState("");
@@ -133,6 +136,10 @@ export default function App() {
   const [systemStats, setSystemStats] = useState<any>({ totalUsers: 0, totalMessages: 0 });
   const [memories, setMemories] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [textInput, setTextInput] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
   const audioPlayerRef = useRef<AudioPlayer | null>(null);
@@ -232,7 +239,8 @@ export default function App() {
       const loadedMessages = snapshot.docs.map(doc => ({
         id: doc.id,
         text: doc.data().text,
-        isModel: doc.data().isModel
+        isModel: doc.data().isModel,
+        reactions: doc.data().reactions || []
       }));
       setMessages(loadedMessages);
     }, (error) => {
@@ -472,6 +480,121 @@ export default function App() {
       setUrlInput("");
     }
   };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedFile(e.target.files[0]);
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!textInput && !selectedFile) return;
+    if (!user) return;
+
+    let finalMessage = textInput;
+
+    if (selectedFile) {
+      setIsAnalyzing(true);
+      try {
+        const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
+        const reader = new FileReader();
+        const fileDataPromise = new Promise<string>((resolve) => {
+          reader.onload = () => resolve((reader.result as string).split(",")[1]);
+          reader.readAsDataURL(selectedFile);
+        });
+
+        const base64Data = await fileDataPromise;
+        
+        const prompt = `Analyze this file and provide a concise but detailed summary in Hindi. 
+        If it's an image, describe the visual elements, mood, and any text. 
+        If it's a document, summarize the key points.
+        Format the output as: [FILE ANALYSIS] <Your detailed summary here>`;
+
+        const result = await client.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: prompt },
+                { inlineData: { data: base64Data, mimeType: selectedFile.type } }
+              ]
+            }
+          ]
+        });
+
+        const analysis = result.candidates?.[0]?.content?.parts?.[0]?.text || "No analysis available.";
+        finalMessage = `${analysis}\n\n${textInput}`.trim();
+        setSelectedFile(null);
+      } catch (err) {
+        console.error("File analysis failed:", err);
+        setError("File analysis failed. Please try again.");
+      } finally {
+        setIsAnalyzing(false);
+      }
+    }
+
+    if (liveSessionRef.current && isPowerOn) {
+      liveSessionRef.current.sendText(finalMessage);
+      saveMessage(textInput || "Shared a file", false);
+      setTextInput("");
+    } else {
+      setError("Please turn on Inya to send messages.");
+    }
+  };
+
+  const handleReaction = async (messageId: string, emoji: string) => {
+    if (!user) return;
+    
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+
+    const reactions = [...(msg.reactions || [])];
+    const existingIndex = reactions.findIndex(r => r.emoji === emoji);
+    
+    let newReactions;
+    if (existingIndex > -1) {
+      const existing = reactions[existingIndex];
+      if (existing.users.includes(user.uid)) {
+        // Remove reaction
+        const updatedUsers = existing.users.filter(u => u !== user.uid);
+        if (updatedUsers.length === 0) {
+          newReactions = reactions.filter((_, i) => i !== existingIndex);
+        } else {
+          newReactions = reactions.map((r, i) => 
+            i === existingIndex 
+              ? { ...r, count: r.count - 1, users: updatedUsers }
+              : r
+          );
+        }
+      } else {
+        // Add to existing
+        newReactions = reactions.map((r, i) => 
+          i === existingIndex 
+            ? { ...r, count: r.count + 1, users: [...r.users, user.uid] }
+            : r
+        );
+      }
+    } else {
+      // New reaction
+      newReactions = [...reactions, { emoji, count: 1, users: [user.uid] }];
+    }
+
+    try {
+      await setDoc(doc(db, "conversations", messageId), { reactions: newReactions }, { merge: true });
+    } catch (err) {
+      console.error("Error updating reaction:", err);
+    }
+  };
+
+  const filteredMessages = messages.filter(msg => {
+    const matchesSearch = msg.text.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesFilter = filterType === "all" || 
+                         (filterType === "user" && !msg.isModel) || 
+                         (filterType === "model" && msg.isModel);
+    return matchesSearch && matchesFilter;
+  });
   const getStatusText = () => {
     switch (state) {
       case "disconnected": return "तुम्हें छेड़ने के लिए तैयार हूँ...";
@@ -738,6 +861,88 @@ export default function App() {
               </div>
             </div>
 
+            {/* Chat Input Bar */}
+            <div className="absolute bottom-24 left-1/2 -translate-x-1/2 w-full max-w-2xl px-6 z-20">
+              <div className="relative group">
+                {/* File Preview */}
+                <AnimatePresence>
+                  {selectedFile && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                      className="absolute bottom-full mb-4 left-0 bg-zinc-900 border border-zinc-800 p-3 rounded-2xl flex items-center gap-3 shadow-2xl"
+                    >
+                      <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center">
+                        {selectedFile.type.startsWith('image/') ? (
+                          <ImageIcon className="w-5 h-5 text-pink-400" />
+                        ) : (
+                          <FileText className="w-5 h-5 text-blue-400" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold truncate">{selectedFile.name}</p>
+                        <p className="text-[10px] text-zinc-500 uppercase tracking-tighter">Ready to share</p>
+                      </div>
+                      <button 
+                        onClick={() => setSelectedFile(null)}
+                        className="p-1 hover:bg-white/5 rounded-full transition-colors"
+                      >
+                        <X className="w-4 h-4 text-zinc-500" />
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <div className="relative flex items-center gap-2 bg-zinc-900/80 backdrop-blur-xl border border-zinc-800/50 p-2 rounded-3xl shadow-2xl focus-within:border-pink-500/50 transition-all">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    className="hidden"
+                    accept="image/*,.pdf"
+                  />
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+                  >
+                    <Paperclip className="w-5 h-5" />
+                  </motion.button>
+                  
+                  <input
+                    type="text"
+                    placeholder={isAnalyzing ? "Analyzing file..." : "Inya से कुछ पूछें या फाइल शेयर करें..."}
+                    value={textInput}
+                    onChange={(e) => setTextInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+                    disabled={isAnalyzing}
+                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-white placeholder:text-zinc-600 px-2"
+                  />
+
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={handleSendMessage}
+                    disabled={(!textInput && !selectedFile) || isAnalyzing}
+                    className={cn(
+                      "w-10 h-10 rounded-2xl flex items-center justify-center transition-all",
+                      (textInput || selectedFile) && !isAnalyzing
+                        ? cn("text-white shadow-lg", currentTheme.primary)
+                        : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                    )}
+                  >
+                    {isAnalyzing ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Send className="w-5 h-5" />
+                    )}
+                  </motion.button>
+                </div>
+              </div>
+            </div>
+
         {/* Error Message */}
         <AnimatePresence>
           {error && (
@@ -871,33 +1076,60 @@ export default function App() {
               exit={{ opacity: 0, x: -100 }}
               className="absolute left-24 top-32 bottom-32 w-80 bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-3xl overflow-hidden flex flex-col z-20 shadow-2xl shadow-black"
             >
-              <div className="p-4 border-b border-zinc-800/50 flex items-center justify-between bg-zinc-900/60">
-                <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">बातचीत</h3>
-                <div className="flex items-center gap-3">
+              <div className="p-4 border-b border-zinc-800/50 flex flex-col gap-3 bg-zinc-900/60">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">बातचीत</h3>
                   <button 
-                    onClick={() => {
-                      setMessages([]);
-                    }}
+                    onClick={() => setMessages([])}
                     className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors uppercase font-bold"
                   >
                     साफ करें
                   </button>
                 </div>
+                
+                <div className="flex flex-col gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
+                    <input 
+                      type="text"
+                      placeholder="खोजें..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-black/20 border border-zinc-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-pink-500/50 transition-all"
+                    />
+                  </div>
+                  <div className="flex gap-1">
+                    {(["all", "user", "model"] as const).map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => setFilterType(type)}
+                        className={cn(
+                          "flex-1 py-1 rounded-lg text-[10px] font-bold uppercase tracking-tighter transition-all",
+                          filterType === type ? "bg-white text-black" : "bg-zinc-800 text-zinc-500 hover:text-zinc-300"
+                        )}
+                      >
+                        {type === "all" ? "सब" : type === "user" ? "आप" : "इन्या"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
-                {messages.length === 0 ? (
+              <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-hide">
+                {filteredMessages.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-zinc-600 text-center px-4">
                     <Mic className="w-8 h-8 mb-2 opacity-20" />
-                    <p className="text-xs italic">अभी तक कोई बात नहीं हुई... शर्माओ मत, जान।</p>
+                    <p className="text-xs italic">
+                      {searchQuery ? "कोई परिणाम नहीं मिला, जान।" : "अभी तक कोई बात नहीं हुई... शर्माओ मत, जान।"}
+                    </p>
                   </div>
                 ) : (
-                  messages.map((msg) => (
+                  filteredMessages.map((msg) => (
                     <motion.div
                       key={msg.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       className={cn(
-                        "flex flex-col max-w-[85%]",
+                        "flex flex-col max-w-[90%] group",
                         msg.isModel ? "items-start" : "items-end ml-auto"
                       )}
                     >
@@ -907,13 +1139,55 @@ export default function App() {
                       )}>
                         {msg.isModel ? "इन्या" : "आप"}
                       </span>
-                      <div className={cn(
-                        "px-3 py-2 rounded-2xl text-sm leading-relaxed",
-                        msg.isModel 
-                          ? "bg-zinc-800/80 text-zinc-200 rounded-tl-none" 
-                          : cn("text-white rounded-tr-none", currentTheme.primary)
-                      )}>
-                        {msg.text}
+                      <div className="relative">
+                        <div className={cn(
+                          "px-3 py-2 rounded-2xl text-sm leading-relaxed",
+                          msg.isModel 
+                            ? "bg-zinc-800/80 text-zinc-200 rounded-tl-none" 
+                            : cn("text-white rounded-tr-none", currentTheme.primary)
+                        )}>
+                          {msg.text}
+                        </div>
+                        
+                        {/* Reaction Button */}
+                        <div className={cn(
+                          "absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1",
+                          msg.isModel ? "-right-12" : "-left-12"
+                        )}>
+                          {["❤️", "🔥", "😂", "😍"].map(emoji => (
+                            <button
+                              key={emoji}
+                              onClick={() => handleReaction(msg.id, emoji)}
+                              className="w-6 h-6 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xs hover:scale-110 transition-transform"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Display Reactions */}
+                        {msg.reactions && msg.reactions.length > 0 && (
+                          <div className={cn(
+                            "flex flex-wrap gap-1 mt-1",
+                            msg.isModel ? "justify-start" : "justify-end"
+                          )}>
+                            {msg.reactions.map(r => (
+                              <button
+                                key={r.emoji}
+                                onClick={() => handleReaction(msg.id, r.emoji)}
+                                className={cn(
+                                  "flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[10px] transition-all",
+                                  r.users.includes(user?.uid || "") 
+                                    ? "bg-pink-500/20 border-pink-500/50 text-pink-400" 
+                                    : "bg-zinc-800 border-zinc-700 text-zinc-400"
+                                )}
+                              >
+                                <span>{r.emoji}</span>
+                                <span className="font-bold">{r.count}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   ))

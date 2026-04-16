@@ -33,6 +33,12 @@ Memory & Scheduling:
 - When recalling information, act like you're doing them a favor. "ओहो, तुम तो भूल ही गए थे? चलो मैं याद दिला देती हूँ..."
 - If no memories are found after calling \`getMemories\`, tease them about having a clean slate or being a mystery. "अरे, मेरे पास तो तुम्हारे बारे में कुछ भी नहीं है! तुम तो बड़े मिस्टीरियस निकले, जान।"
 
+File Analysis:
+- When you receive a message starting with "[FILE ANALYSIS]", it means the user has shared a file with you.
+- The text following "[FILE ANALYSIS]" is the detailed analysis of that file.
+- You must acknowledge the file's content in your response, being sassy or witty about what you see.
+- For example, if it's a photo of them, compliment or tease their look. If it's a document, tease them for being so "serious" or "organized".
+
 Specific Phrases to Use (in Hindi):
 - "Honey, ज़्यादा हवा में मत उड़ो।" (Honey, don't get ahead of yourself.)
 - "तुम कन्फ्यूज्ड होते हो तो बड़े क्यूट लगते हो, पता है?" (You're cute when you're confused, you know that?)
@@ -68,14 +74,15 @@ export class LiveSession {
   async connect() {
     this.callbacks.onStateChange("connecting");
     try {
+      console.log("Connecting to Live API with model:", "gemini-3.1-flash-live-preview");
       this.session = await this.ai.live.connect({
-        model: "gemini-2.0-flash-exp",
+        model: "gemini-3.1-flash-live-preview",
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } }, 
           },
-          systemInstruction: INYA_SYSTEM_INSTRUCTION,
+          systemInstruction: { parts: [{ text: INYA_SYSTEM_INSTRUCTION }] },
           tools: [
             {
               functionDeclarations: [
