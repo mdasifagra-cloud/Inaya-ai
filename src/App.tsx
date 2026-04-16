@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { GoogleGenAI, Type } from "@google/genai";
-import { Mic, MicOff, Power, PowerOff, Globe, AlertCircle, Loader2, ExternalLink, X, LogOut, User as UserIcon, LayoutDashboard, MessageSquare, Settings, Users, BarChart3, ShieldCheck, Clock, Calendar, Paperclip, Send, FileText, Image as ImageIcon } from "lucide-react";
+import { Mic, MicOff, Power, PowerOff, Globe, AlertCircle, Loader2, ExternalLink, X, LogOut, User as UserIcon, LayoutDashboard, MessageSquare, Settings, Users, BarChart3, ShieldCheck, Clock, Calendar } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { AudioStreamer } from "@/src/lib/audio-streamer";
 import { AudioPlayer } from "@/src/lib/audio-player";
@@ -126,10 +125,6 @@ export default function App() {
   const [sensitivity, setSensitivity] = useState(1.5);
   const [showUrlModal, setShowUrlModal] = useState(false);
   const [urlInput, setUrlInput] = useState("");
-  const [textInput, setTextInput] = useState("");
-  const [selectedFile, setSelectedFile] = useState<{ name: string; type: string; data: string } | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -271,41 +266,66 @@ export default function App() {
   const handleToolCall = useCallback(async (call: any) => {
     if (!user) return { error: "User not authenticated" };
 
-    switch (call.name) {
-      case "saveMemory": {
-        const { content, category } = call.args;
-        await addDoc(collection(db, "memories"), {
-          userId: user.uid,
-          content,
-          category: category || "general",
-          timestamp: serverTimestamp()
-        });
-        return { success: true, message: "Memory saved" };
+    console.log("Tool call received:", call.name, call.args);
+
+    try {
+      switch (call.name) {
+        case "saveMemory": {
+          const { content, category } = call.args;
+          await addDoc(collection(db, "memories"), {
+            userId: user.uid,
+            content,
+            category: category || "general",
+            timestamp: serverTimestamp()
+          });
+          return { success: true, message: "Memory saved" };
+        }
+        case "getMemories": {
+          const q = query(collection(db, "memories"), where("userId", "==", user.uid), orderBy("timestamp", "desc"), limit(50));
+          const snap = await getDocs(q);
+          const memories = snap.docs.map(d => {
+            const data = d.data();
+            return {
+              ...data,
+              timestamp: data.timestamp instanceof Timestamp ? data.timestamp.toDate().toISOString() : data.timestamp
+            };
+          });
+          console.log("Retrieved memories:", memories);
+          return memories;
+        }
+        case "setSchedule": {
+          const { title, time } = call.args;
+          await addDoc(collection(db, "schedules"), {
+            userId: user.uid,
+            title,
+            time: Timestamp.fromDate(new Date(time)),
+            status: "pending",
+            notified: false,
+            timestamp: serverTimestamp()
+          });
+          return { success: true, message: "Schedule set" };
+        }
+        case "getSchedules": {
+          const q = query(collection(db, "schedules"), where("userId", "==", user.uid), where("status", "==", "pending"), orderBy("time", "asc"));
+          const snap = await getDocs(q);
+          const schedules = snap.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              ...data,
+              time: data.time instanceof Timestamp ? data.time.toDate().toISOString() : data.time,
+              timestamp: data.timestamp instanceof Timestamp ? data.timestamp.toDate().toISOString() : data.timestamp
+            };
+          });
+          console.log("Retrieved schedules:", schedules);
+          return schedules;
+        }
+        default:
+          return { error: "Unknown tool" };
       }
-      case "getMemories": {
-        const q = query(collection(db, "memories"), where("userId", "==", user.uid), orderBy("timestamp", "desc"), limit(50));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => d.data());
-      }
-      case "setSchedule": {
-        const { title, time } = call.args;
-        await addDoc(collection(db, "schedules"), {
-          userId: user.uid,
-          title,
-          time: Timestamp.fromDate(new Date(time)),
-          status: "pending",
-          notified: false,
-          timestamp: serverTimestamp()
-        });
-        return { success: true, message: "Schedule set" };
-      }
-      case "getSchedules": {
-        const q = query(collection(db, "schedules"), where("userId", "==", user.uid), where("status", "==", "pending"), orderBy("time", "asc"));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      }
-      default:
-        return { error: "Unknown tool" };
+    } catch (err: any) {
+      console.error(`Tool call error (${call.name}):`, err);
+      return { error: err.message || "Internal tool error" };
     }
   }, [user]);
 
@@ -450,78 +470,6 @@ export default function App() {
       window.open(url, "_blank");
       setShowUrlModal(false);
       setUrlInput("");
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      setSelectedFile({
-        name: file.name,
-        type: file.type,
-        data: base64.split(",")[1]
-      });
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleSendMessage = async () => {
-    if (!textInput && !selectedFile) return;
-    if (!isPowerOn || state === "connecting") {
-      setError("Inya को पहले ऑन करो, जान!");
-      return;
-    }
-
-    let finalMessage = textInput;
-    
-    if (selectedFile) {
-      setIsAnalyzing(true);
-      try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-        const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: {
-            parts: [
-              {
-                inlineData: {
-                  data: selectedFile.data,
-                  mimeType: selectedFile.type
-                }
-              },
-              {
-                text: `Analyze this file (${selectedFile.name}) in detail. Provide a comprehensive summary of its contents, including any text, visual elements, or data present. This analysis will be used to inform an AI assistant about the file's content.`
-              }
-            ]
-          }
-        });
-
-        const analysis = response.text;
-        finalMessage = `${textInput ? textInput + "\n\n" : ""}User shared a file: ${selectedFile.name}\nFile Analysis: ${analysis}`;
-      } catch (err) {
-        console.error("File analysis failed:", err);
-        setError("File analysis failed. Please try again.");
-        setIsAnalyzing(false);
-        return;
-      } finally {
-        setIsAnalyzing(false);
-      }
-    }
-
-    if (finalMessage) {
-      liveSessionRef.current?.sendText(finalMessage);
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        text: textInput || `Shared file: ${selectedFile?.name}`,
-        isModel: false,
-        timestamp: new Date()
-      }]);
-      setTextInput("");
-      setSelectedFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
   const getStatusText = () => {
@@ -787,88 +735,6 @@ export default function App() {
                     )}
                   />
                 ))}
-              </div>
-            </div>
-
-            {/* Chat Input Bar */}
-            <div className="absolute bottom-24 left-1/2 -translate-x-1/2 w-full max-w-2xl px-6 z-20">
-              <div className="relative group">
-                {/* File Preview */}
-                <AnimatePresence>
-                  {selectedFile && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.9 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                      className="absolute bottom-full mb-4 left-0 bg-zinc-900 border border-zinc-800 p-3 rounded-2xl flex items-center gap-3 shadow-2xl"
-                    >
-                      <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center">
-                        {selectedFile.type.startsWith('image/') ? (
-                          <ImageIcon className="w-5 h-5 text-pink-400" />
-                        ) : (
-                          <FileText className="w-5 h-5 text-blue-400" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold truncate">{selectedFile.name}</p>
-                        <p className="text-[10px] text-zinc-500 uppercase tracking-tighter">Ready to share</p>
-                      </div>
-                      <button 
-                        onClick={() => setSelectedFile(null)}
-                        className="p-1 hover:bg-white/5 rounded-full transition-colors"
-                      >
-                        <X className="w-4 h-4 text-zinc-500" />
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <div className="relative flex items-center gap-2 bg-zinc-900/80 backdrop-blur-xl border border-zinc-800/50 p-2 rounded-3xl shadow-2xl focus-within:border-pink-500/50 transition-all">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    className="hidden"
-                    accept="image/*,.pdf"
-                  />
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
-                  >
-                    <Paperclip className="w-5 h-5" />
-                  </motion.button>
-                  
-                  <input
-                    type="text"
-                    placeholder={isAnalyzing ? "Analyzing file..." : "Inya से कुछ पूछें या फाइल शेयर करें..."}
-                    value={textInput}
-                    onChange={(e) => setTextInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-                    disabled={isAnalyzing}
-                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-white placeholder:text-zinc-600 px-2"
-                  />
-
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={handleSendMessage}
-                    disabled={(!textInput && !selectedFile) || isAnalyzing}
-                    className={cn(
-                      "w-10 h-10 rounded-2xl flex items-center justify-center transition-all",
-                      (textInput || selectedFile) && !isAnalyzing
-                        ? cn("text-white shadow-lg", currentTheme.primary)
-                        : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
-                    )}
-                  >
-                    {isAnalyzing ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <Send className="w-5 h-5" />
-                    )}
-                  </motion.button>
-                </div>
               </div>
             </div>
 

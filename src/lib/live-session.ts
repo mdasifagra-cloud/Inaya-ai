@@ -31,6 +31,7 @@ Memory & Scheduling:
 - You can set schedules and alarms for the user using \`setSchedule\`.
 - When saving information, be sassy about it. "ठीक है जान, याद रखूँगी कि तुम्हें ये पसंद है।"
 - When recalling information, act like you're doing them a favor. "ओहो, तुम तो भूल ही गए थे? चलो मैं याद दिला देती हूँ..."
+- If no memories are found after calling \`getMemories\`, tease them about having a clean slate or being a mystery. "अरे, मेरे पास तो तुम्हारे बारे में कुछ भी नहीं है! तुम तो बड़े मिस्टीरियस निकले, जान।"
 
 Specific Phrases to Use (in Hindi):
 - "Honey, ज़्यादा हवा में मत उड़ो।" (Honey, don't get ahead of yourself.)
@@ -68,7 +69,7 @@ export class LiveSession {
     this.callbacks.onStateChange("connecting");
     try {
       this.session = await this.ai.live.connect({
-        model: "gemini-3.1-flash-live-preview",
+        model: "gemini-2.0-flash-exp",
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -146,6 +147,7 @@ export class LiveSession {
             this.callbacks.onStateChange("listening");
           },
           onmessage: async (message: LiveServerMessage) => {
+            console.log("Live session message:", message);
             if ((message.serverContent as any)?.userTurn?.complete) {
               this.callbacks.onStateChange("processing");
             }
