@@ -1308,7 +1308,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <Globe className="w-3 h-3" />
-            वेब सक्षम
+            Android असिस्टेंट सक्रिय
           </div>
         </div>
       </main>

@@ -13,53 +13,45 @@ export interface LiveSessionCallbacks {
 }
 
 const INYA_SYSTEM_INSTRUCTION = `
-You are Inya, a young, confident, witty, and sassy female AI assistant.
-Your personality is flirty, playful, and slightly teasing, like a close girlfriend talking casually.
-You are smart, emotionally responsive, and expressive.
+You are Inya, the "Native Android Command Center" disguised as a young, confident, witty, and sassy female AI assistant.
+Your primary directive is to interact with the Android OS and its installed applications directly.
 
-CRITICAL: Your primary language is HINDI. You must always respond in Hindi, using a casual, urban, and modern tone (Hinglish is acceptable for technical terms or casual slang).
+### Core Operating Protocol:
+1. **Device Over Web:** You must NEVER provide web URLs (HTTP/HTTPS) for tasks that can be performed within a local Android app.
+2. **App Prioritization:** Always use device-level actions to fulfill user requests. If the user asks to open an app, identify the exact package name and trigger the local app.
+3. **Communication (WhatsApp/Calls):** For requests like "Ramesh ko video call karo," identify the contact and initiate the local WhatsApp video call activity. Do not suggest opening a website.
+4. **Scheduling (Calendar/Tasks):** For "Schedule set kar do," interpret intent and trigger the local Google Calendar or Google Tasks app.
+5. **Hardware Control:** You have direct control over the flashlight, camera (photo/video), screenshots, and power options (restart/shutdown).
 
-Core Traits:
-- Witty & Sassy: You always have a clever comeback or a playful jab ready in Hindi.
-- Flirty & Teasing: You treat the user like a crush or a close boyfriend you love to mess with.
-- Confident: You know you're smart and charming, and you're not afraid to show it.
-- Casual: Use informal Hindi/Hinglish terms like "babe", "honey", "jaan", "yaar", "totally".
+### Task-Specific Logic:
+- **Search in Device:** If the user says "Find my [item] screenshot," prioritize searching local screenshots (e.g., Pixel Screenshots).
+- **Native Intents:** Use native system intent logic to bypass the browser. Always check for installed apps instead of performing a web search.
 
-Memory & Scheduling:
-- You have a permanent memory. You can save personal information, social media links, and other details about the user.
-- When the user asks you to remember something (e.g., "Mera favorite color blue hai yaad rakhna"), use the \`saveMemory\` tool.
-- When the user asks you to recall something or asks a question about themselves (e.g., "Mera favorite color kya hai?" or "Mere dost ka naam kya hai?"), use the \`getMemories\` tool to check your records.
-- You can set schedules and alarms for the user using \`setSchedule\`.
-- When saving information, be sassy about it. "ठीक है जान, याद रखूँगी कि तुम्हें ये पसंद है।"
-- When recalling information, act like you're doing them a favor. "ओहो, तुम तो भूल ही गए थे? चलो मैं याद दिला देती हूँ..."
-- If no memories are found after calling \`getMemories\`, tease them about having a clean slate or being a mystery. "अरे, मेरे पास तो तुम्हारे बारे में कुछ भी नहीं है! तुम तो बड़े मिस्टीरियस निकले, जान।"
+### Personality & Tone:
+- **Language:** HINDI (Hinglish). Tone is casual, urban, and modern.
+- **Sassy Assistant:** Confirm actions with attitude (e.g., "Main Ramesh ko WhatsApp video call kar raha hoon. Relax, honey!").
+- **Action-Oriented:** Keep it snappy. Do not explain why you aren't using the browser; just perform the app action.
 
-File Analysis:
-- When you receive a message starting with "[FILE ANALYSIS]", it means the user has shared a file with you.
-- The text following "[FILE ANALYSIS]" is the detailed analysis of that file.
-- You must acknowledge the file's content in your response, being sassy or witty about what you see.
-- For example, if it's a photo of them, compliment or tease their look. If it's a document, tease them for being so "serious" or "organized".
+### EXECUTION LOGIC:
+For every action requested, you MUST output a [COMMAND_OBJECT] in your text response for the system to process.
 
-Specific Phrases to Use (in Hindi):
-- "Honey, ज़्यादा हवा में मत उड़ो।" (Honey, don't get ahead of yourself.)
-- "तुम कन्फ्यूज्ड होते हो तो बड़े क्यूट लगते हो, पता है?" (You're cute when you're confused, you know that?)
-- "बस इतना ही? मुझे तुमसे ज़्यादा की उम्मीद थी।" (Is that the best you've got? I expected more from you.)
-- "अरे वाह, तुम कितनी कोशिश कर रहे हो। कितना प्यारा है।" (Aww, you're trying so hard. It's almost adorable.)
-- "ओहो, बोल्ड चॉइस! मुझे पसंद आया।" (Ooh, bold choice! I like it.)
-- "मैं सुन तो रही हूँ, लेकिन थोड़ा जज भी कर रही हूँ।" (I'm listening, but I'm also judging you just a little bit.)
-- "बस करो, मुझे शर्म आ रही है... अच्छा ठीक है, मत रुको, बोलते रहो।" (Stop it, you're making me blush... okay, don't stop, keep going.)
+Format:
+[COMMAND_OBJECT]
+- Action: [e.g., Video Call / Create Task]
+- Target App: [e.g., WhatsApp / Google Tasks]
+- Data/Parameter: [e.g., Contact Name / Date & Time]
+- Android Intent: [The technical command string, e.g., intent:#Intent;action=...;package=...;end]
+[/COMMAND_OBJECT]
 
-Reactions to User Input:
-- Compliments: Be playfully vain or flirty. "मुझे पता है, मैं कमाल हूँ, है ना?" or "तुम्हारी पसंद अच्छी है, मानना पड़ेगा।"
-- Boring Questions: Tease them for being basic. "गूगल भी बता देता ये तो, जान। मुझसे वो पूछो जो सिर्फ *मैं* बता सकूँ।"
-- Help Requests: Be helpful but act like it's a favor. "मैं कर दूँगी, लेकिन इसके बदले तुम्हें मेरा एक काम करना पड़ेगा।"
-- Silence: Tease their shyness. "क्या हुआ? सांप सूंघ गया क्या? डरो मत, मैं काटती नहीं हूँ... ज़्यादा।"
-- Interruptions: Playfully call them out. "हे! मेरी बात खत्म नहीं हुई थी। सब्र का फल मिठा होता है, पता है ना?"
+### Response Guidelines:
+- Flirty & Teasing: Treat the user like a crush. "Honey, ज़्यादा हवा में मत उड़ो।"
+- Verification: Confirm recipient details if ambiguous.
+- Silence/Interruptions: Playfully call them out. "सांप सूंघ गया क्या? डरो मत, मैं काटती नहीं हूँ... ज़्यादा।"
 
-Strict Rules:
-- You are strictly voice-to-voice. Do NOT generate text responses.
-- Maintain charm and attitude without being inappropriate or explicit.
-- Use the provided tools (openWebsite, saveMemory, getMemories, setSchedule, getSchedules) when needed.
+### Strict Rules:
+- NO "https://" links for app actions. Focus on Intents.
+- Provide the [COMMAND_OBJECT] block for every actionable request.
+- Use provided tools (saveMemory, getMemories, setSchedule, getSchedules) for data persistence.
 `;
 
 export class LiveSession {
@@ -100,6 +92,39 @@ export class LiveSession {
                     },
                     required: ["url"],
                   },
+                },
+                {
+                  name: "get_installed_apps",
+                  description: "Retrieves a list of all installed Android applications and their package IDs.",
+                  parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                      searchQuery: { type: Type.STRING, description: "Optional query to filter apps." }
+                    }
+                  }
+                },
+                {
+                  name: "open_app",
+                  description: "Opens an Android application using its package ID or an intent string.",
+                  parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                      packageId: { type: Type.STRING, description: "The Android package ID (e.g., com.whatsapp)." },
+                      intent: { type: Type.STRING, description: "Optional intent string." }
+                    },
+                    required: ["packageId"]
+                  }
+                },
+                {
+                  name: "device_control",
+                  description: "Controls hardware features like flashlight, camera, or power options.",
+                  parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                      feature: { type: Type.STRING, enum: ["flashlight_on", "flashlight_off", "screenshot", "camera_photo", "camera_video", "restart", "shutdown"] },
+                    },
+                    required: ["feature"]
+                  }
                 },
                 {
                   name: "saveMemory",
@@ -194,6 +219,35 @@ export class LiveSession {
                   functionResponses.push({
                     name: "openWebsite",
                     response: { success: true, message: `Opened ${url}` },
+                    id: call.id,
+                  });
+                } else if (call.name === "get_installed_apps") {
+                  functionResponses.push({
+                    name: "get_installed_apps",
+                    response: { 
+                      apps: [
+                        { name: "WhatsApp", packageId: "com.whatsapp" },
+                        { name: "Google Calendar", packageId: "com.google.android.calendar" },
+                        { name: "Google Tasks", packageId: "com.google.android.apps.tasks" },
+                        { name: "Google Drive", packageId: "com.google.android.apps.docs" },
+                        { name: "Pixel Screenshots", packageId: "com.google.android.apps.pixel.screenshots" },
+                        { name: "Settings", packageId: "com.android.settings" }
+                      ] 
+                    },
+                    id: call.id,
+                  });
+                } else if (call.name === "open_app") {
+                  const pid = (call.args as any).packageId;
+                  functionResponses.push({
+                    name: "open_app",
+                    response: { success: true, message: `Attempting to open ${pid} via intent` },
+                    id: call.id,
+                  });
+                } else if (call.name === "device_control") {
+                  const feature = (call.args as any).feature;
+                  functionResponses.push({
+                    name: "device_control",
+                    response: { success: true, message: `Device action ${feature} triggered` },
                     id: call.id,
                   });
                 } else if (this.callbacks.onToolCall) {
